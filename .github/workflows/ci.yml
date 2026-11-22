@@ -1,0 +1,65 @@
+name: ci
+
+# agent 开源仓门禁：格式化 → 静态检查 → 单测（-race）→ 构建。
+# agent 只依赖 contracts（不 import 闭源 core）；CI 通过并列 checkout + go.work 组装。
+on:
+  pull_request:
+    branches: [develop, main]
+  push:
+    branches: [develop, main]
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  ci:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: checkout agent
+        uses: actions/checkout@v4
+
+      - name: checkout contracts
+        uses: actions/checkout@v4
+        with:
+          repository: relayx-tech/contracts
+          path: contracts
+          token: ${{ secrets.RELAYX_CI_TOKEN }}
+
+      - name: setup go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: assemble workspace
+        run: go work init . ./contracts
+
+      - name: gofmt
+        run: |
+          unformatted="$(gofmt -l $(git ls-files '*.go'))"
+          if [ -n "$unformatted" ]; then
+            echo "以下文件未格式化，请运行 gofmt -w："
+            echo "$unformatted"
+            exit 1
+          fi
+
+      - name: go vet
+        run: go vet ./internal/... ./cmd/...
+
+      - name: unit tests
+        run: go test -race -count=1 ./internal/... ./cmd/...
+
+      - name: boundary (no closed-source core import)
+        run: |
+          if grep -rqE 'github\.com/relayx-tech/core' --include='*.go' .; then
+            echo "agent 不得 import 闭源 core module"
+            exit 1
+          fi
+
+      - name: build
+        run: go build ./cmd/...
