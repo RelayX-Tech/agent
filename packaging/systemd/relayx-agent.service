@@ -1,0 +1,25 @@
+[Unit]
+Description=RelayX Agent (node control channel)
+Documentation=https://github.com/relayx-tech/agent
+After=network-online.target relayx-core-node.service
+Wants=network-online.target
+Requires=relayx-core-node.service
+
+[Service]
+Type=simple
+User=relayx
+Group=relayx
+ExecStart=/opt/relayx/agent/agent -f /etc/relayx/agent.yaml
+Restart=on-failure
+RestartSec=2s
+LimitNOFILE=65535
+StateDirectory=relayx/agent
+StateDirectoryMode=0700
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+ReadWritePaths=/var/lib/relayx/agent /run/relayx
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,25 @@
+Name: agent
+ListenOn: 0.0.0.0:9100
+Log:
+  Mode: console
+  Encoding: json
+AgentVersion: 1.0.0
+CoreVersion: 1.0.0
+ContractVersion: 1.0.0
+NodeID: node-entry-1
+NodeType: entry
+CoreNodeSocket: /run/relayx/core-node.sock
+CoreNodeTimeoutSeconds: 32
+DedupCapacity: 1024
+# 安全（生产必配）：
+# PanelPublicKey: "<base64-ed25519-public-key>"   # 开启 Ed25519 验签
+# TLS:                                             # Agent 作为 Panel 调用的服务端（mTLS）
+#   CertFile: /var/lib/relayx/agent/client.crt
+#   KeyFile: /var/lib/relayx/agent/client.key
+#   CAFile: /etc/relayx/tls/panel-ca.crt
+# 节点注册（design §3.10）：首次启动用一次性 Token 换取证书；之后走 mTLS。
+# PanelRegistrationAddr: panel.example.com:9101
+# PanelCAFile: /etc/relayx/tls/panel-ca.crt
+# RegistrationToken: "<one-time-token>"
+# CertFile: /var/lib/relayx/agent/client.crt
+# KeyFile: /var/lib/relayx/agent/client.key
