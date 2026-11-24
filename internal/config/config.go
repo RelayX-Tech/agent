@@ -24,6 +24,18 @@ type AgentConfig struct {
 	RegistrationToken     string `json:",optional"`
 	CertFile              string `json:",default=/var/lib/relayx/agent/client.crt"`
 	KeyFile               string `json:",default=/var/lib/relayx/agent/client.key"`
+
+	// STO-004 Agent 在线自升级。
+	SelfUpdate SelfUpdateConfig `json:",optional"`
+}
+
+// SelfUpdateConfig 配置 Agent 自升级目录、服务与验签公钥。
+type SelfUpdateConfig struct {
+	Enabled     bool     `json:",default=true"`
+	BaseDir     string   `json:",default=/opt/relayx-agent"`
+	CurrentLink string   `json:",default=current"`
+	ServiceName string   `json:",default=relayx-agent.service"`
+	PublicKeys  []string `json:",optional"`
 }
 
 // TLSConfig 配置 mTLS（服务端要求客户端证书，TLS 1.3）。
