@@ -12,6 +12,7 @@ import (
 	"github.com/relayx-tech/agent/internal/errs"
 	"github.com/relayx-tech/agent/internal/nodeclient"
 	"github.com/relayx-tech/agent/internal/probe"
+	"github.com/relayx-tech/agent/internal/selfupdate"
 	"github.com/relayx-tech/agent/internal/status"
 	"github.com/relayx-tech/agent/internal/svc"
 	agentv1 "github.com/relayx-tech/contracts/gen/go/agent/v1"
@@ -22,15 +23,41 @@ import (
 // Service 实现 AgentControlService。
 type Service struct {
 	agentv1.UnimplementedAgentControlServiceServer
-	svc   *svc.ServiceContext
-	node  nodeclient.RuntimeClient
-	dedup *operationDedup
-	now   func() time.Time
+	svc    *svc.ServiceContext
+	node   nodeclient.RuntimeClient
+	dedup  *operationDedup
+	now    func() time.Time
+	update *selfupdate.Updater
 }
 
 // NewService 构造 AgentControlService；去重缓存默认 1024 条。
 func NewService(s *svc.ServiceContext, node nodeclient.RuntimeClient) *Service {
 	return &Service{svc: s, node: node, dedup: newOperationDedup(1024), now: time.Now}
+}
+
+// SetUpdater 注入自升级执行器（配置关闭时为 nil）。
+func (s *Service) SetUpdater(u *selfupdate.Updater) { s.update = u }
+
+// Update 下发 Agent 在线自升级；同 op 幂等，异 op 进行中返回 UPDATE_IN_PROGRESS。
+func (s *Service) Update(_ context.Context, req *agentv1.AgentUpdateRequest) (*agentv1.AgentUpdateResponse, error) {
+	if s.update == nil {
+		return &agentv1.AgentUpdateResponse{
+			Accepted: false, State: "failed",
+			Error: &agentv1.AgentErrorDetail{Code: "INTERNAL", Message: "self-update is disabled"},
+		}, nil
+	}
+	result := s.update.Update(context.Background(), selfupdate.Request{
+		OperationID: req.GetOperationId(), TargetVersion: req.GetTargetVersion(),
+		SourceURL: req.GetSourceUrl(), SHA256: req.GetSha256(), Signature: req.GetSignature(),
+		Reason: req.GetReason(), Deadline: time.Duration(req.GetDeadlineSeconds()) * time.Second,
+	})
+	resp := &agentv1.AgentUpdateResponse{
+		Accepted: result.Accepted, State: result.State, CurrentVersion: result.CurrentVersion,
+	}
+	if result.ErrorCode != "" {
+		resp.Error = &agentv1.AgentErrorDetail{Code: result.ErrorCode, Message: result.ErrorMessage}
+	}
+	return resp, nil
 }
 
 // Hello 做合同 / 版本握手；不兼容返回 VERSION_INCOMPATIBLE。
@@ -153,6 +180,15 @@ func (s *Service) Status(ctx context.Context, _ *agentv1.StatusRequest) (*agentv
 	if ks, err := s.node.KernelStatus(ctx, &corev1.KernelStatusRequest{NodeId: s.svc.NodeID}); err == nil {
 		resp.Kernel = toAgentKernelState(ks.GetKernel())
 		resp.LastApplyState = ks.GetKernel().GetState()
+	}
+	if s.update != nil {
+		if state := s.update.Status(); state.OperationID != "" {
+			resp.UpdateState = &agentv1.AgentUpdateState{
+				OperationId: state.OperationID, State: state.State, TargetVersion: state.TargetVersion,
+				ProgressPercent: uint32(state.Progress), ErrorCode: state.ErrorCode, ErrorMessage: state.ErrorMessage,
+				UpdatedAt: timestamppb.New(state.UpdatedAt),
+			}
+		}
 	}
 	return resp, nil
 }

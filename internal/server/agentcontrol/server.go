@@ -3,10 +3,12 @@ package agentcontrol
 
 import (
 	"encoding/base64"
+	"path/filepath"
 	"time"
 
 	"github.com/relayx-tech/agent/internal/config"
 	"github.com/relayx-tech/agent/internal/middleware"
+	"github.com/relayx-tech/agent/internal/selfupdate"
 	"github.com/relayx-tech/agent/internal/svc"
 	agentv1 "github.com/relayx-tech/contracts/gen/go/agent/v1"
 	"github.com/zeromicro/go-zero/core/logx"
@@ -23,7 +25,23 @@ type Server struct {
 
 // New 构造 agent Server。
 func New(cfg config.AgentConfig, s *svc.ServiceContext) *Server {
-	return &Server{cfg: cfg, service: NewService(s, s.NodeClient)}
+	service := NewService(s, s.NodeClient)
+	if cfg.SelfUpdate.Enabled {
+		updater := selfupdate.New(
+			selfupdate.Config{
+				BaseDir: cfg.SelfUpdate.BaseDir, CurrentLink: cfg.SelfUpdate.CurrentLink,
+				ServiceName: cfg.SelfUpdate.ServiceName, PublicKeys: cfg.SelfUpdate.PublicKeys,
+				Timeout: 10 * time.Minute,
+			},
+			selfupdate.HTTPSDownloader{},
+			selfupdate.SystemctlRestarter{},
+			selfupdate.SymlinkLinker{},
+			&selfupdate.FileStore{Path: filepath.Join(cfg.SelfUpdate.BaseDir, "state.json")},
+			func() string { return cfg.AgentVersion },
+		)
+		service.SetUpdater(updater)
+	}
+	return &Server{cfg: cfg, service: service}
 }
 
 // Start 启动 zrpc 服务并阻塞。
